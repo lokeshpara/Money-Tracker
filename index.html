@@ -729,19 +729,15 @@ function catKind(id){return catById(id).kind||'flex';}
 
 // average monthly spend per category from completed months; projects if only the current month exists
 function monthlyByCategory(){
+  // Average monthly spend per category across EVERY month that has data — current month
+  // included — so expenses you add now show up in the plan right away.
   const byMC={}, months=new Set();
   S.expenses.forEach(e=>{const m=monthOf(e.date);months.add(m);
     (byMC[m]=byMC[m]||{})[e.cat]=(byMC[m][e.cat]||0)+e.amount;});
-  const cm=monthOf(todayStr());
-  const completed=[...months].filter(m=>m!==cm);
-  const res={};
-  if(completed.length){
-    completed.forEach(m=>{const c=byMC[m];for(const k in c)res[k]=(res[k]||0)+c[k];});
-    for(const k in res)res[k]/=completed.length;
-  }else{
-    const dayNum=new Date().getDate()||1, c=byMC[cm]||{};
-    for(const k in c)res[k]=c[k]/dayNum*30;
-  }
+  const n=months.size, res={};
+  if(!n)return res;
+  months.forEach(m=>{const c=byMC[m];for(const k in c)res[k]=(res[k]||0)+c[k];});
+  for(const k in res)res[k]/=n;
   return res;
 }
 function fixedFlexSplit(){
