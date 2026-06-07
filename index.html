@@ -148,20 +148,25 @@
   /* ===================== Desktop / laptop ===================== */
   @media(min-width:900px){
     body{padding-bottom:0}
-    .app{max-width:1200px;display:grid;grid-template-columns:248px minmax(0,1fr);
-      min-height:100vh;background:var(--card);box-shadow:0 0 50px rgba(15,23,42,.07)}
+    .app{max-width:none;display:grid;grid-template-columns:250px minmax(0,1fr);
+      min-height:100vh;background:var(--card)}
     .sidebar{display:flex;flex-direction:column;border-right:1px solid var(--line);
       position:sticky;top:0;height:100vh;background:var(--card)}
     .bottomnav{display:none}
     .content{display:flex;flex-direction:column;min-width:0}
     header{position:sticky;top:0}
     header h1{display:none}
-    main{padding:24px 28px;width:100%;max-width:1040px;margin:0 auto}
-    /* dashboard tiling: two columns, hero card spans full width */
-    #tab-add.active,#tab-budget.active,#tab-plan.active,#tab-stats.active{
+    main{padding:24px 32px;width:100%}
+    /* dashboard tiling: hero card spans full width, the rest tile to fill the space */
+    #tab-add.active,#tab-budget.active,#tab-plan.active,#tab-stats.active,#tab-settings.active{
       display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
     #tab-plan .card:first-child,#tab-stats .card:first-child,
     #tab-budget .card:first-child,.card.full{grid-column:1/-1}
+  }
+  /* wide screens: use the extra width with a third column */
+  @media(min-width:1500px){
+    .app{grid-template-columns:270px minmax(0,1fr)}
+    #tab-plan.active,#tab-stats.active,#tab-settings.active{grid-template-columns:1fr 1fr 1fr}
   }
 </style>
 </head>
