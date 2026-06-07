@@ -1110,6 +1110,7 @@ function subscribeRealtime(){ // instant push from other devices (if Realtime en
   }catch(e){}
 }
 function unsubscribeRealtime(){try{if(rtChannel){sb.removeChannel(rtChannel);rtChannel=null;}}catch(e){}}
+function stateSig(s){const c=Object.assign({},s);delete c.updatedAt;delete c.selectedCat;return JSON.stringify(c);} // data fingerprint, ignoring timestamp + UI-only fields
 async function pullCloud(silent){
   if(!sb||!sbUser)return;
   if(!silent)setSyncStatus('Checking cloud…');
@@ -1122,12 +1123,13 @@ async function pullCloud(silent){
         // don't wipe what the user is actively typing — pick it up on the next tick
         const ae=document.activeElement;
         if(ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA')){setSyncStatus('New changes available…');return;}
-        applyingRemote=true;
-        S=Object.assign(JSON.parse(JSON.stringify(DEFAULT)),remote);
-        localStorage.setItem(KEY,JSON.stringify(S));
-        applyingRemote=false;
-        initUI();go(currentTab);
-        toast('Synced from your other device');
+        const before=stateSig(S);
+        applyingRemote=true;                 // suppress timestamp re-stamp + push during adopt (prevents loop)
+        try{
+          S=Object.assign(JSON.parse(JSON.stringify(DEFAULT)),remote);
+          localStorage.setItem(KEY,JSON.stringify(S));
+          if(stateSig(S)!==before){ initUI(); go(currentTab); toast('Synced from your other device'); }
+        }finally{ applyingRemote=false; }      // always release, even if a render throws
       }else if(lT>rT){await pushCloud();}
     }else{await pushCloud();} // first time: seed the cloud with local data
     setSyncStatus('Up to date');

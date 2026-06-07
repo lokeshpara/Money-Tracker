@@ -1,6 +1,6 @@
 /* MoneyTrack service worker — offline-first caching.
    Bump CACHE whenever you change any cached file so phones pick up the update. */
-const CACHE = 'moneytrack-v7';
+const CACHE = 'moneytrack-v8';
 const ASSETS = [
   './',
   './index.html',
