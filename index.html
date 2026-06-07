@@ -161,7 +161,7 @@
     header h1{display:none}
     main{padding:24px 32px;width:100%}
     /* dashboard tiling: hero card spans full width, the rest tile to fill the space */
-    #tab-add.active,#tab-budget.active,#tab-plan.active,#tab-stats.active,#tab-settings.active{
+    #tab-home.active,#tab-add.active,#tab-budget.active,#tab-plan.active,#tab-stats.active,#tab-settings.active{
       display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
     #tab-plan .card:first-child,#tab-stats .card:first-child,
     #tab-budget .card:first-child,.card.full{grid-column:1/-1}
@@ -169,7 +169,7 @@
   /* wide screens: use the extra width with a third column */
   @media(min-width:1500px){
     .app{grid-template-columns:270px minmax(0,1fr)}
-    #tab-plan.active,#tab-stats.active,#tab-settings.active{grid-template-columns:1fr 1fr 1fr}
+    #tab-home.active,#tab-plan.active,#tab-stats.active,#tab-settings.active{grid-template-columns:1fr 1fr 1fr}
   }
 </style>
 </head>
@@ -178,7 +178,8 @@
   <aside class="sidebar">
     <div class="brand">💰 <span>MoneyTrack</span></div>
     <nav class="sidenav">
-      <button class="on" data-tab="add" onclick="go('add')"><span class="ni">➕</span><span class="lx">Add expense</span></button>
+      <button class="on" data-tab="home" onclick="go('home')"><span class="ni">🏠</span><span class="lx">Home</span></button>
+      <button data-tab="add" onclick="go('add')"><span class="ni">➕</span><span class="lx">Add</span></button>
       <button data-tab="history" onclick="go('history')"><span class="ni">📅</span><span class="lx">History</span></button>
       <button data-tab="stats" onclick="go('stats')"><span class="ni">📊</span><span class="lx">Report</span></button>
       <button data-tab="budget" onclick="go('budget')"><span class="ni">🎯</span><span class="lx">Budget</span></button>
@@ -197,8 +198,11 @@
   </header>
 
   <main>
+    <!-- HOME TAB -->
+    <section class="tab active" id="tab-home"></section>
+
     <!-- ADD TAB -->
-    <section class="tab active" id="tab-add">
+    <section class="tab" id="tab-add">
       <div class="card">
         <h2>Add a transaction</h2>
         <div class="seg">
@@ -404,7 +408,8 @@
 
   </div><!-- /content -->
   <nav class="bottomnav">
-    <button class="on" data-tab="add" onclick="go('add')"><span class="ni">➕</span>Add</button>
+    <button class="on" data-tab="home" onclick="go('home')"><span class="ni">🏠</span>Home</button>
+    <button data-tab="add" onclick="go('add')"><span class="ni">➕</span>Add</button>
     <button data-tab="history" onclick="go('history')"><span class="ni">📅</span>History</button>
     <button data-tab="stats" onclick="go('stats')"><span class="ni">📊</span>Report</button>
     <button data-tab="budget" onclick="go('budget')"><span class="ni">🎯</span>Budget</button>
@@ -481,12 +486,13 @@ function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');cle
 function fmtDate(ds){const[y,m,d]=ds.split('-');const dt=new Date(y,m-1,d);return dt.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});}
 
 /* ---------- Navigation ---------- */
-let currentTab='add';
+let currentTab='home';
 function go(tab){
   currentTab=tab;
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   $('tab-'+tab).classList.add('active');
   document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
+  if(tab==='home')renderHome();
   if(tab==='history')renderHistory();
   if(tab==='stats')renderStats();
   if(tab==='budget')renderBudgets();
@@ -571,6 +577,55 @@ function refreshHeader(){
   const month=S.expenses.filter(e=>isSpend(e)&&monthOf(e.date)===m).reduce((s,e)=>s+e.amount,0);
   $('hBalance').textContent=money(balance());
   $('hMonth').textContent=money(month);
+}
+
+/* ---------- Home dashboard ---------- */
+function greeting(){const h=new Date().getHours();return h<12?'Good morning':h<18?'Good afternoon':'Good evening';}
+function quickAdd(t){go('add');setEntryType(t);const a=$('amount');if(a)a.focus();}
+function renderHome(){
+  const cm=monthOf(todayStr());
+  const inMonth=S.expenses.filter(e=>isIncome(e)&&monthOf(e.date)===cm).reduce((s,e)=>s+e.amount,0);
+  const spentMonth=S.expenses.filter(e=>isSpend(e)&&monthOf(e.date)===cm).reduce((s,e)=>s+e.amount,0);
+  const prioMonth=S.expenses.filter(e=>isPrioTx(e)&&monthOf(e.date)===cm).reduce((s,e)=>s+e.amount,0);
+  const net=inMonth-spentMonth-prioMonth, bal=balance();
+  const monthName=new Date().toLocaleDateString(undefined,{month:'long'});
+  // top categories this month
+  const byCat={};S.expenses.filter(e=>isSpend(e)&&monthOf(e.date)===cm).forEach(e=>byCat[e.cat]=(byCat[e.cat]||0)+e.amount);
+  const top=Object.entries(byCat).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  const catBars=top.length?top.map(([id,v])=>{const c=catById(id),pct=spentMonth?Math.round(v/spentMonth*100):0;
+    return `<div style="margin-bottom:9px"><div style="display:flex;justify-content:space-between;font-size:13px"><span>${c.emoji||''} ${c.name}</span><span>${money(v)} · ${pct}%</span></div><div class="bar"><div style="width:${pct}%;background:${c.color}"></div></div></div>`;}).join(''):'<div class="empty">No spending yet this month.</div>';
+  // priorities mini
+  const prios=S.priorities.length?S.priorities.slice(0,4).map(p=>{const funded=prFunded(p),target=p.target||0,pct=target?Math.min(100,Math.round(funded/target*100)):0;
+    return `<div style="margin-bottom:9px"><div style="display:flex;justify-content:space-between;font-size:13px"><span>${p.emoji||'🎯'} ${escapeHtml(p.name)}</span><span>${target?pct+'%':money(funded)}</span></div>${target?`<div class="bar"><div style="width:${pct}%;background:#0f766e"></div></div>`:''}</div>`;}).join(''):'<div class="empty">No priorities yet.</div>';
+  // recent
+  const recent=[...S.expenses].sort((a,b)=>b.date.localeCompare(a.date)||b.id.localeCompare(a.id)).slice(0,5);
+  const recentHtml=recent.length?recent.map(e=>expRow(e,true)).join(''):'<div class="empty">No transactions yet — add one above 👆</div>';
+  const tip=S.expenses.length?savingTips()[0]:null;
+  $('tab-home').innerHTML=`
+    <div class="card full">
+      <div class="bignum ${bal>=0?'ok':'warn'}">
+        <div class="bn-lbl">${greeting()} · your balance</div>
+        <div class="bn-val">${money(bal)}</div>
+        <div class="bn-sub">${monthName}: <b>+${money(inMonth)}</b> in · <b>−${money(spentMonth)}</b> spent</div>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button class="btn" onclick="quickAdd('out')">➖ Add expense</button>
+        <button class="btn sec" onclick="quickAdd('in')">➕ Add income</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>${monthName} so far</h2>
+      <div class="stat-grid">
+        <div class="stat"><div class="l">Income</div><div class="v" style="color:#16a34a">${money(inMonth)}</div></div>
+        <div class="stat"><div class="l">Spent</div><div class="v">${money(spentMonth)}</div></div>
+        <div class="stat"><div class="l">To priorities</div><div class="v">${money(prioMonth)}</div></div>
+        <div class="stat"><div class="l">Net</div><div class="v" style="color:${net>=0?'#16a34a':'#dc2626'}">${(net>=0?'+':'−')+money(Math.abs(net))}</div></div>
+      </div>
+    </div>
+    <div class="card"><h2>Top spending</h2>${catBars}<button class="btn sec" onclick="go('stats')" style="margin-top:6px">Full report</button></div>
+    <div class="card"><h2>Priorities</h2>${prios}<button class="btn sec" onclick="go('plan')" style="margin-top:6px">Open Plan</button></div>
+    <div class="card"><h2>Recent activity</h2>${recentHtml}<button class="btn sec" onclick="go('history')" style="margin-top:6px">See all</button></div>
+    ${tip?`<div class="card"><h2>💡 Tip</h2><div class="hl ok" style="margin-top:0">${tip}</div></div>`:''}`;
 }
 
 /* ---------- History ---------- */
@@ -1223,7 +1278,7 @@ function initUI(){
   if($('setOpening'))$('setOpening').value=S.openingBalance||'';
   if(!S.selTarget||(S.selTarget.k==='cat'&&!catById(S.selTarget.id)))S.selTarget={k:'cat',id:S.categories[0]&&S.categories[0].id};
   setEntryType('out');
-  renderCatPick();renderRecent();refreshHeader();
+  renderCatPick();renderRecent();refreshHeader();renderHome();
   requestPersist();
 }
 initUI();
