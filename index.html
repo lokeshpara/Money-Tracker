@@ -188,8 +188,8 @@
   <header>
     <h1>💰 MoneyTrack</h1>
     <div class="balance">
-      <div class="bchip"><div class="lbl">Spent today</div><div class="val" id="hToday">—</div></div>
-      <div class="bchip"><div class="lbl">This month</div><div class="val" id="hMonth">—</div></div>
+      <div class="bchip"><div class="lbl">Balance</div><div class="val" id="hBalance">—</div></div>
+      <div class="bchip"><div class="lbl">Spent this month</div><div class="val" id="hMonth">—</div></div>
     </div>
   </header>
 
@@ -197,7 +197,11 @@
     <!-- ADD TAB -->
     <section class="tab active" id="tab-add">
       <div class="card">
-        <h2>Add an expense</h2>
+        <h2>Add a transaction</h2>
+        <div class="seg">
+          <button class="on" id="segOut" onclick="setEntryType('out')">➖ Expense</button>
+          <button id="segIn" onclick="setEntryType('in')">➕ Income</button>
+        </div>
         <div class="row">
           <div style="flex:2">
             <label>Amount</label>
@@ -208,11 +212,13 @@
             <input id="date" type="date">
           </div>
         </div>
-        <label>Category</label>
-        <div class="cat-pick" id="catPick"></div>
-        <label>Note (optional)</label>
+        <div id="pickWrap">
+          <label id="pickLabel">For — pick a category or a priority</label>
+          <div class="cat-pick" id="catPick"></div>
+        </div>
+        <label id="noteLabel">Note (optional)</label>
         <input id="note" type="text" placeholder="e.g. lunch with team">
-        <button class="btn" onclick="addExpense()">Add expense</button>
+        <button class="btn" id="addBtn" onclick="addEntry()">Add expense</button>
       </div>
 
       <div class="card">
@@ -301,7 +307,7 @@
 
       <div class="card">
         <h2>🎯 Priorities</h2>
-        <p class="muted">Where your spare money goes. Fixed ones (like a loan minimum) come out first; the rest is split by weight.</p>
+        <p class="muted">Goals you're putting money toward (loan, parents, a laptop…). Each one becomes a choice on the Add page — pick it to put money in. Tap <b>+ Add money</b> below or select it when adding.</p>
         <div id="prioList"></div>
         <details id="prDetails" style="margin-top:6px">
           <summary id="prSummary">+ Add a priority</summary>
@@ -316,18 +322,9 @@
             <option value="recurring">🔁 Recurring send (parents)</option>
             <option value="purchase">🛒 Something to buy</option>
           </select>
-          <label>How much to put toward it each month</label>
-          <div class="row">
-            <select id="prAlloc" onchange="prAllocUI()">
-              <option value="percent">% share of spare money</option>
-              <option value="fixed">Fixed $ / month</option>
-            </select>
-            <input id="prValue" type="number" inputmode="decimal" placeholder="e.g. 50">
-          </div>
-          <div id="prValueHint" class="muted" style="margin-top:4px"></div>
           <div id="prTargetWrap">
-            <label id="prTargetLbl">Total cost / balance to clear</label>
-            <input id="prTarget" type="number" inputmode="decimal" placeholder="0.00">
+            <label id="prTargetLbl">Target amount (optional)</label>
+            <input id="prTarget" type="number" inputmode="decimal" placeholder="e.g. 1200">
             <label>Already paid / saved (optional)</label>
             <input id="prStart" type="number" inputmode="decimal" placeholder="0.00">
           </div>
@@ -357,23 +354,11 @@
         <div id="accountBox"></div>
       </div>
       <div class="card">
-        <h2>Income &amp; savings</h2>
-        <p class="muted">Powers your Plan tab. Stays on your phone.</p>
-        <label>Take-home pay (per paycheck)</label>
-        <div class="row">
-          <input id="setIncome" type="number" inputmode="decimal" placeholder="0.00" onchange="setFinance()" style="flex:2">
-          <select id="setFreq" onchange="setFinance()">
-            <option value="weekly">every week</option>
-            <option value="biweekly">every 2 weeks</option>
-            <option value="semimonthly">twice a month</option>
-            <option value="monthly">monthly</option>
-          </select>
-        </div>
-        <div id="incomeHint" class="muted" style="margin-top:4px"></div>
-        <label>Current savings (money in the bank right now)</label>
-        <input id="setSavings" type="number" inputmode="decimal" placeholder="0.00" onchange="setFinance()">
-        <label>Emergency fund size (months of expenses to always keep)</label>
-        <input id="setBuffer" type="number" inputmode="numeric" placeholder="3" onchange="setFinance()">
+        <h2>💵 Opening balance</h2>
+        <p class="muted">The money you have right now, before logging transactions. Your <b>Balance = opening + income − spending</b>.</p>
+        <label>Opening balance</label>
+        <input id="setOpening" type="number" inputmode="decimal" placeholder="0.00" onchange="setFinance()">
+        <p class="muted" style="margin-top:8px">💡 Each time you're paid, log it as <b>Income</b> on the Add page — your balance goes up. Log spending as <b>Expense</b> — it goes down.</p>
       </div>
       <div class="card">
         <h2>Categories</h2>
@@ -443,8 +428,8 @@ const DEFAULT={
     {id:'other',name:'Other',color:'#64748b',emoji:'📦',kind:'flex'}
   ],
   budgets:{}, currency:'$', selectedCat:'food',
-  incomeAmt:0, incomeFreq:'biweekly', savings:0, bufferMonths:3,
-  priorities:[]
+  incomeAmt:0, incomeFreq:'biweekly', savings:0, bufferMonths:3, openingBalance:0,
+  priorities:[], selTarget:{k:'cat',id:'food'}
 };
 let S=load();
 function load(){try{const r=localStorage.getItem(KEY);return r?Object.assign(JSON.parse(JSON.stringify(DEFAULT)),JSON.parse(r)):JSON.parse(JSON.stringify(DEFAULT));}catch(e){return JSON.parse(JSON.stringify(DEFAULT));}}
@@ -468,6 +453,10 @@ function migrate(){
   }
   // backfill category kind
   S.categories.forEach(c=>{if(!c.kind)c.kind='flex';});
+  // ledger model: old expenses are all 'out'; carry old savings into opening balance
+  if(Array.isArray(S.expenses))S.expenses.forEach(e=>{if(!e.type)e.type='out';});
+  if(!S.openingBalance&&S.savings)S.openingBalance=S.savings;
+  if(!S.selTarget)S.selTarget={k:'cat',id:(S.categories[0]&&S.categories[0].id)||'food'};
   save();
 }
 
@@ -478,6 +467,13 @@ const money=n=>cur()+(Math.round(n*100)/100).toLocaleString(undefined,{minimumFr
 const todayStr=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
 const monthOf=ds=>ds.slice(0,7);
 const catById=id=>S.categories.find(c=>c.id===id)||{name:'Other',color:'#64748b',emoji:'📦'};
+const priById=id=>S.priorities.find(p=>p.id===id);
+/* ---------- Ledger helpers ---------- */
+const isIncome=e=>e.type==='in';          // money in
+const isPrioTx=e=>!!e.prio;               // money put toward a priority (out, but a "saving", not spending)
+const isSpend=e=>!isIncome(e)&&!isPrioTx(e); // a normal category expense
+function balance(){let b=(S.openingBalance||0);S.expenses.forEach(e=>{b+=isIncome(e)?e.amount:-e.amount;});return b;}
+function prFunded(p){let s=(p.log||[]).reduce((a,x)=>a+x.amount,0);S.expenses.forEach(e=>{if(e.prio===p.id)s+=e.amount;});return s;}
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),1800);}
 function fmtDate(ds){const[y,m,d]=ds.split('-');const dt=new Date(y,m-1,d);return dt.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});}
 
@@ -496,49 +492,82 @@ function go(tab){
   window.scrollTo(0,0);
 }
 
-/* ---------- Add expense ---------- */
-function renderCatPick(){
-  $('catPick').innerHTML=S.categories.map(c=>
-    `<button class="cat-btn ${c.id===S.selectedCat?'on':''}" onclick="pickCat('${c.id}')">
-       <span class="dot" style="background:${c.color}"></span>${c.emoji||''} ${c.name}</button>`).join('');
+/* ---------- Add transaction ---------- */
+let entryType='out';
+function setEntryType(t){
+  entryType=t;
+  $('segOut').classList.toggle('on',t==='out');
+  $('segIn').classList.toggle('on',t==='in');
+  $('pickWrap').style.display=t==='in'?'none':'block';
+  $('addBtn').textContent=t==='in'?'Add income':'Add expense';
+  $('noteLabel').textContent=t==='in'?'Source (optional)':'Note (optional)';
+  $('note').placeholder=t==='in'?'e.g. salary, paycheck, gift':'e.g. lunch with team';
 }
-function pickCat(id){S.selectedCat=id;save();renderCatPick();}
-function addExpense(){
+function renderCatPick(){
+  if(!S.selTarget)S.selTarget={k:'cat',id:S.categories[0]&&S.categories[0].id};
+  const sel=S.selTarget;
+  const cats=S.categories.map(c=>{
+    const on=sel.k==='cat'&&sel.id===c.id;
+    return `<button class="cat-btn ${on?'on':''}" onclick="pickTarget('cat','${c.id}')">
+      <span class="dot" style="background:${c.color}"></span>${c.emoji||''} ${c.name}</button>`;
+  }).join('');
+  const pris=S.priorities.length?('<div style="flex-basis:100%;height:2px"></div>'+S.priorities.map(p=>{
+    const on=sel.k==='prio'&&sel.id===p.id;
+    return `<button class="cat-btn ${on?'on':''}" style="background:${on?'#ecfdf5':'#eef2ff'}" onclick="pickTarget('prio','${p.id}')">
+      ${p.emoji||'🎯'} ${escapeHtml(p.name)}</button>`;
+  }).join('')):'';
+  $('catPick').innerHTML=cats+pris;
+}
+function pickTarget(k,id){S.selTarget={k,id};save();renderCatPick();}
+function addEntry(){
   const amt=parseFloat($('amount').value);
   if(!amt||amt<=0){toast('Enter a valid amount');return;}
-  const e={id:Date.now()+''+Math.floor(Math.random()*999),amount:amt,
-    cat:S.selectedCat,note:$('note').value.trim(),date:$('date').value||todayStr()};
+  const date=$('date').value||todayStr(), note=$('note').value.trim();
+  const id=Date.now()+''+Math.floor(Math.random()*999);
+  let e;
+  if(entryType==='in'){ e={id,amount:amt,type:'in',note,date}; }
+  else{
+    const sel=S.selTarget||{k:'cat',id:S.categories[0]&&S.categories[0].id};
+    e=(sel.k==='prio')?{id,amount:amt,type:'out',prio:sel.id,note,date}
+                      :{id,amount:amt,type:'out',cat:sel.id,note,date};
+  }
   S.expenses.push(e);save();
   $('amount').value='';$('note').value='';
-  toast('Added '+money(amt));
+  toast((entryType==='in'?'Income +':'Added ')+money(amt));
   refreshHeader();renderRecent();
 }
 function delExpense(id){
   S.expenses=S.expenses.filter(e=>e.id!==id);save();
   refreshHeader();renderRecent();
-  const h=$('tab-history');if(h.classList.contains('active'))renderHistory();
-}
-function expRow(e,showDate){
-  const c=catById(e.cat);
-  return `<div class="exp">
-    <div class="ic" style="background:${c.color}">${c.emoji||'•'}</div>
-    <div class="mid"><div class="t1">${c.name}${e.note?' · '+escapeHtml(e.note):''}</div>
-      <div class="t2">${showDate?fmtDate(e.date):''}</div></div>
-    <div class="amt">${money(e.amount)}</div>
-    <button class="del" onclick="delExpense('${e.id}')">×</button></div>`;
+  if($('tab-history').classList.contains('active'))renderHistory();
+  if($('tab-plan').classList.contains('active'))renderPlan();
 }
 function escapeHtml(s){return s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function txMeta(e){
+  if(isIncome(e))return {color:'#16a34a',icon:'💰',title:'Income'+(e.note?' · '+escapeHtml(e.note):''),sign:'+'};
+  if(e.prio){const p=priById(e.prio)||{name:'Priority',emoji:'🎯'};return {color:'#6366f1',icon:p.emoji||'🎯',title:p.name+(e.note?' · '+escapeHtml(e.note):''),sign:'−'};}
+  const c=catById(e.cat);return {color:c.color,icon:c.emoji||'•',title:c.name+(e.note?' · '+escapeHtml(e.note):''),sign:'−'};
+}
+function expRow(e,showDate){
+  const m=txMeta(e);
+  return `<div class="exp">
+    <div class="ic" style="background:${m.color}">${m.icon}</div>
+    <div class="mid"><div class="t1">${m.title}</div>
+      <div class="t2">${showDate?fmtDate(e.date):''}</div></div>
+    <div class="amt" style="color:${m.sign==='+'?'#16a34a':'inherit'}">${m.sign}${money(e.amount)}</div>
+    <button class="del" onclick="delExpense('${e.id}')">×</button></div>`;
+}
 function renderRecent(){
   const list=[...S.expenses].sort((a,b)=>b.date.localeCompare(a.date)||b.id.localeCompare(a.id)).slice(0,8);
-  $('recentList').innerHTML=list.length?list.map(e=>expRow(e,true)).join(''):'<div class="empty">No expenses yet. Add your first above! 👆</div>';
+  $('recentList').innerHTML=list.length?list.map(e=>expRow(e,true)).join(''):'<div class="empty">Nothing yet. Add your first transaction above! 👆</div>';
 }
 
 /* ---------- Header ---------- */
 function refreshHeader(){
-  const t=todayStr(),m=monthOf(t);
-  const today=S.expenses.filter(e=>e.date===t).reduce((s,e)=>s+e.amount,0);
-  const month=S.expenses.filter(e=>monthOf(e.date)===m).reduce((s,e)=>s+e.amount,0);
-  $('hToday').textContent=money(today);$('hMonth').textContent=money(month);
+  const m=monthOf(todayStr());
+  const month=S.expenses.filter(e=>isSpend(e)&&monthOf(e.date)===m).reduce((s,e)=>s+e.amount,0);
+  $('hBalance').textContent=money(balance());
+  $('hMonth').textContent=money(month);
 }
 
 /* ---------- History ---------- */
@@ -553,10 +582,11 @@ function renderHistory(){
   const byDay={};items.forEach(e=>{(byDay[e.date]=byDay[e.date]||[]).push(e);});
   const days=Object.keys(byDay).sort().reverse();
   $('histList').innerHTML=days.length?days.map(d=>{
-    const dayTotal=byDay[d].reduce((s,e)=>s+e.amount,0);
-    return `<div class="day-hdr"><span>${fmtDate(d)}</span><span>${money(dayTotal)}</span></div>`+
+    const net=byDay[d].reduce((s,e)=>s+(isIncome(e)?e.amount:-e.amount),0);
+    const lbl=(net>=0?'+':'−')+money(Math.abs(net));
+    return `<div class="day-hdr"><span>${fmtDate(d)}</span><span style="color:${net>=0?'#16a34a':'inherit'}">${lbl}</span></div>`+
       byDay[d].sort((a,b)=>b.id.localeCompare(a.id)).map(e=>expRow(e,false)).join('');
-  }).join(''):'<div class="empty">No expenses this month.</div>';
+  }).join(''):'<div class="empty">No transactions this month.</div>';
 }
 
 /* ---------- Report (Stats) ---------- */
@@ -588,7 +618,7 @@ function reportRange(){
 }
 function renderStats(){
   const {from,to,label}=reportRange();
-  const exp=S.expenses.filter(e=>e.date>=from&&e.date<=to);
+  const exp=S.expenses.filter(e=>isSpend(e)&&e.date>=from&&e.date<=to);
   const total=exp.reduce((s,e)=>s+e.amount,0);
   const span=Math.max(1,daysBetween(from,to)+1);
   if($('repCaption'))$('repCaption').innerHTML=`<b>${label}</b> · ${fmtShort(from)} – ${fmtShort(to)} · ${span} day${span>1?'s':''} · ${exp.length} entr${exp.length===1?'y':'ies'}`;
@@ -634,7 +664,7 @@ function drawTrendChart(exp,from,to){
 }
 function exportReportCSV(){
   const {from,to,label}=reportRange();
-  const exp=S.expenses.filter(e=>e.date>=from&&e.date<=to).sort((a,b)=>a.date.localeCompare(b.date));
+  const exp=S.expenses.filter(e=>isSpend(e)&&e.date>=from&&e.date<=to).sort((a,b)=>a.date.localeCompare(b.date));
   if(!exp.length){toast('No data in this period');return;}
   const esc=s=>'"'+String(s).replace(/"/g,'""')+'"';
   const round=n=>Math.round(n*100)/100;
@@ -653,7 +683,7 @@ function exportReportCSV(){
 /* ---------- Budgets ---------- */
 function renderBudgets(){
   const m=monthOf(todayStr());
-  const spent={};S.expenses.filter(e=>monthOf(e.date)===m).forEach(e=>spent[e.cat]=(spent[e.cat]||0)+e.amount);
+  const spent={};S.expenses.filter(e=>isSpend(e)&&monthOf(e.date)===m).forEach(e=>spent[e.cat]=(spent[e.cat]||0)+e.amount);
   $('budgetList').innerHTML=S.categories.map(c=>{
     const lim=S.budgets[c.id]||0,sp=spent[c.id]||0;
     const pct=lim?Math.min(100,Math.round(sp/lim*100)):0;
@@ -676,7 +706,7 @@ function setBudget(id,val){const v=parseFloat(val);if(v>0)S.budgets[id]=v;else d
 /* ---------- AI advisor ---------- */
 function buildSummary(){
   const m=monthOf(todayStr());
-  const exp=S.expenses.filter(e=>monthOf(e.date)===m);
+  const exp=S.expenses.filter(e=>isSpend(e)&&monthOf(e.date)===m);
   const total=exp.reduce((s,e)=>s+e.amount,0);
   const byCat={};exp.forEach(e=>byCat[e.cat]=(byCat[e.cat]||0)+e.amount);
   const sorted=Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([id,v])=>({name:catById(id).name,amount:Math.round(v*100)/100,pct:total?Math.round(v/total*100):0}));
@@ -732,7 +762,7 @@ function monthlyByCategory(){
   // Per-category spending for THIS month (so the plan matches your actual current-month totals).
   // If this month has nothing logged yet, fall back to the most recent month that does.
   const byMC={};
-  S.expenses.forEach(e=>{const m=monthOf(e.date);(byMC[m]=byMC[m]||{})[e.cat]=(byMC[m][e.cat]||0)+e.amount;});
+  S.expenses.forEach(e=>{if(!isSpend(e))return;const m=monthOf(e.date);(byMC[m]=byMC[m]||{})[e.cat]=(byMC[m][e.cat]||0)+e.amount;});
   const months=Object.keys(byMC);
   if(!months.length)return {};
   const cm=monthOf(todayStr());
@@ -769,9 +799,9 @@ function dateNDaysAgo(n){const d=new Date();d.setDate(d.getDate()-n);
 function patternInsights(){
   const today=todayStr(), d7=dateNDaysAgo(7), d14=dateNDaysAgo(14), d30=dateNDaysAgo(30);
   const sum=a=>a.reduce((s,e)=>s+e.amount,0);
-  const thisWeek=S.expenses.filter(e=>e.date>d7&&e.date<=today);
-  const lastWeek=S.expenses.filter(e=>e.date>d14&&e.date<=d7);
-  const last30=S.expenses.filter(e=>e.date>d30&&e.date<=today);
+  const thisWeek=S.expenses.filter(e=>isSpend(e)&&e.date>d7&&e.date<=today);
+  const lastWeek=S.expenses.filter(e=>isSpend(e)&&e.date>d14&&e.date<=d7);
+  const last30=S.expenses.filter(e=>isSpend(e)&&e.date>d30&&e.date<=today);
   const byCat=a=>{const o={};a.forEach(e=>o[e.cat]=(o[e.cat]||0)+e.amount);return o;};
   const cTw=byCat(thisWeek), cLw=byCat(lastWeek), movers=[];
   new Set([...Object.keys(cTw),...Object.keys(cLw)]).forEach(id=>{
@@ -801,8 +831,8 @@ const MEAL_ROTATION=[
   {name:'Egg fried rice with frozen veg',cost:1.6}
 ];
 function savingTips(){
-  const pi=patternInsights(), tips=[], free=freeCash();
-  if(free<0)tips.push(`Heads up: your typical spending is about ${money(-free)}/month more than your income. Trim a fixed bill or a flexible category before adding priorities.`);
+  const pi=patternInsights(), tips=[], bal=balance();
+  if(bal<0)tips.push(`Heads up: your balance is negative (${money(bal)}). You've spent/allocated more than you have — add income or ease off spending.`);
   if(pi.lastWeek>0&&pi.wpct>15)tips.push(`You spent ${money(pi.thisWeek)} this week — ${pi.wpct}% more than last week (${money(pi.lastWeek)}). Ease off for a few days to rebalance.`);
   pi.movers.filter(m=>m.diff>0&&catKind(m.id)==='flex'&&m.now>0).slice(0,2).forEach(m=>{
     const c=catById(m.id);
@@ -812,69 +842,71 @@ function savingTips(){
   return tips;
 }
 
-/* ---------- Plan: render ---------- */
+/* ---------- Plan: render (balance ledger) ---------- */
 function renderPlan(){renderMoneyPlan();renderPriorities();renderPatterns();renderTips();prAllocUI();}
+function thisMonthSpend(){const m=monthOf(todayStr());return S.expenses.filter(e=>isSpend(e)&&monthOf(e.date)===m).reduce((s,e)=>s+e.amount,0);}
 
 function renderMoneyPlan(){
-  const inc=monthlyIncome();
-  if(!inc){
-    $('planHead').innerHTML=`<div class="empty">Add your pay in <b>Settings → Income &amp; savings</b> to build your plan. 💡</div>
-      <button class="btn sec" onclick="go('settings')">Open settings</button>`;
-    return;
-  }
-  const sp=fixedFlexSplit(), free=inc-sp.total, a=allocate();
-  let allocated=Object.values(a.monthly).reduce((s,v)=>s+v,0); allocated=Math.min(allocated,Math.max(0,free));
-  const buffer=S.bufferMonths||3, ef=sp.total*buffer, cushion=Math.max(0,(S.savings||0)-ef);
+  const bal=balance(), opening=S.openingBalance||0;
+  let inSum=0,outSum=0,prioSum=0;
+  S.expenses.forEach(e=>{ if(isIncome(e))inSum+=e.amount; else if(isPrioTx(e))prioSum+=e.amount; else outSum+=e.amount; });
   $('planHead').innerHTML=`
-    <div class="stat-grid">
-      <div class="stat"><div class="l">Income / month</div><div class="v">${money(inc)}</div></div>
-      <div class="stat"><div class="l">Spending this month</div><div class="v">${money(sp.total)}</div></div>
-      <div class="stat"><div class="l">Spare money</div><div class="v" style="color:${free>=0?'#16a34a':'#dc2626'}">${money(free)}</div></div>
-      <div class="stat"><div class="l">Going to priorities</div><div class="v">${money(allocated)}</div></div>
+    <div class="bignum ${bal>=0?'ok':'warn'}">
+      <div class="bn-lbl">Current balance</div>
+      <div class="bn-val">${money(bal)}</div>
+      <div class="bn-sub">opening + income − spending − priorities</div>
+    </div>
+    <div class="stat-grid" style="margin-top:12px">
+      <div class="stat"><div class="l">Total income</div><div class="v" style="color:#16a34a">${money(inSum)}</div></div>
+      <div class="stat"><div class="l">Total spent</div><div class="v">${money(outSum)}</div></div>
+      <div class="stat"><div class="l">Put to priorities</div><div class="v">${money(prioSum)}</div></div>
+      <div class="stat"><div class="l">Spent this month</div><div class="v">${money(thisMonthSpend())}</div></div>
     </div>
     <div class="calc" style="margin-top:10px">
-      <div><span>Fixed bills (rent, utilities…)</span><b>${money(sp.fixed)}</b></div>
-      <div><span>Flexible (food, gas, fun…)</span><b>${money(sp.flex)}</b></div>
-      <div class="tot"><span>Spare after spending</span><b>${money(free)}</b></div>
+      <div><span>Opening balance</span><b>${money(opening)}</b></div>
+      <div><span>+ Income logged</span><b>${money(inSum)}</b></div>
+      <div><span>− Spending</span><b>${money(outSum)}</b></div>
+      <div><span>− Put toward priorities</span><b>${money(prioSum)}</b></div>
+      <div class="tot"><span>= Balance</span><b>${money(bal)}</b></div>
     </div>
-    ${cushion>0?`<div class="hl ok">💰 You also have <b>${money(cushion)}</b> in savings above your ${buffer}-month emergency fund — available for a one-time push on a priority.</div>`:''}
-    <div class="muted" style="margin-top:8px">Based on ${money(S.incomeAmt)} ${({weekly:'every week',biweekly:'every 2 weeks',semimonthly:'twice a month',monthly:'per month'})[S.incomeFreq]} (≈ ${money(inc)}/mo). Spending shown is your actual total for this month.</div>`;
+    <div class="muted" style="margin-top:8px">Log income &amp; expenses on the Add page. Set your starting amount in <b>Settings → Opening balance</b>.</div>`;
 }
 
 function renderPriorities(){
-  const a=allocate(), cm=monthOf(todayStr());
   if(!S.priorities.length){
-    $('prioList').innerHTML='<div class="empty">No priorities yet. Add your loan, parents, or things to buy below 👇</div>';
+    $('prioList').innerHTML='<div class="empty">No priorities yet. Add a loan, parents, or something to buy below — it then appears as an option on the Add page so you can put money toward it. 👇</div>';
     return;
   }
+  const cm=monthOf(todayStr());
   $('prioList').innerHTML=S.priorities.map(p=>{
-    const monthly=a.monthly[p.id]||0, prog=prProgress(p);
-    const thisMonth=(p.log||[]).filter(x=>monthOf(x.date)===cm).reduce((s,x)=>s+x.amount,0);
-    let detail='', bar='';
+    const funded=prFunded(p), target=p.target||0, remaining=Math.max(0,target-funded);
+    const pct=target?Math.min(100,Math.round(funded/target*100)):0;
+    const thisMonth=S.expenses.filter(e=>e.prio===p.id&&monthOf(e.date)===cm).reduce((s,e)=>s+e.amount,0)
+      +((p.log||[]).filter(x=>monthOf(x.date)===cm).reduce((s,x)=>s+x.amount,0));
+    let detail,bar='';
     if(p.kind==='recurring'){
-      detail=`Plan ${money(monthly)}/mo · sent this month ${money(thisMonth)} · total ${money(prog)}`;
+      detail=`${money(funded)} in total · ${money(thisMonth)} this month`;
+    }else if(target&&remaining<=0){
+      bar=`<div class="bar"><div style="width:100%;background:#16a34a"></div></div>`;
+      detail=`🎉 ${p.kind==='debt'?'Paid off':'Fully funded'}! (${money(funded)})`;
+    }else if(target){
+      bar=`<div class="bar"><div style="width:${pct}%;background:#0f766e"></div></div>`;
+      detail=`${money(funded)} of ${money(target)} · ${money(remaining)} to go`;
     }else{
-      const target=p.target||0, remaining=Math.max(0,target-prog);
-      const pct=target?Math.min(100,Math.round(prog/target*100)):0;
-      bar=`<div class="bar"><div style="width:${pct}%;background:${remaining<=0?'#16a34a':'#0f766e'}"></div></div>`;
-      if(target&&remaining<=0)detail=`🎉 ${p.kind==='debt'?'Paid off':'Fully funded'}!`;
-      else{const mo=monthly>0&&remaining>0?Math.ceil(remaining/monthly):null;
-        detail=`${money(prog)} / ${money(target)} · ${money(monthly)}/mo`+(mo?` · ~${mo} mo left`:'');}
+      detail=`${money(funded)} put in so far`;
     }
-    const allocLbl=p.alloc==='fixed'?money(p.value)+'/mo fixed':p.value+' weight';
     return `<div class="goal">
-      <div class="top"><span>${p.emoji||'•'} ${escapeHtml(p.name)} <span class="muted">· ${allocLbl}</span></span>
-        <span>${money(monthly)}/mo</span></div>
+      <div class="top"><span>${p.emoji||'🎯'} ${escapeHtml(p.name)}</span><span>${target?pct+'%':''}</span></div>
       ${bar}
       <div class="sub">${detail}</div>
       <div class="goal-act">
-        <button class="btn sm sec" onclick="logContribution('${p.id}')">+ ${p.kind==='recurring'?'Log send':'Add saved'}</button>
+        <button class="btn sm" style="width:auto" onclick="fundPriority('${p.id}')">+ Add money</button>
         <button class="btn sm sec" onclick="editPriority('${p.id}')">Edit</button>
         <button class="btn sm sec" style="background:#fee2e2;color:#dc2626" onclick="delPriority('${p.id}')">Remove</button>
       </div></div>`;
-  }).join('') +
-    (a.overCommitted?`<div class="hl warn">⚠️ Your fixed priorities (${money(a.fixedTotal)}/mo) cost more than your spare money (${money(a.free)}/mo). Lower a fixed amount or cut spending.</div>`:'');
+  }).join('');
 }
+function fundPriority(id){setEntryType('out');S.selTarget={k:'prio',id};save();renderCatPick();go('add');var a=$('amount');if(a)a.focus();toast('Enter the amount to put toward it');}
 
 function renderPatterns(){
   if(!S.expenses.length){$('patternBody').innerHTML='<div class="empty">Log a week or two of expenses and your patterns show up here.</div>';return;}
@@ -902,40 +934,35 @@ let editingPriority=null;
 function defEmoji(k){return k==='debt'?'💳':k==='recurring'?'👨‍👩‍👧':'🛒';}
 function prAllocUI(){
   if(!$('prKind'))return;
-  const kind=$('prKind').value, alloc=$('prAlloc').value;
+  const kind=$('prKind').value;
   $('prTargetWrap').style.display = kind==='recurring' ? 'none' : 'block';
-  $('prTargetLbl').textContent = kind==='debt' ? 'Loan balance to clear' : 'Total cost';
-  $('prValueHint').textContent = alloc==='percent'
-    ? 'Weight = its share of spare money vs other % priorities (they auto-balance to 100%).'
-    : 'A set amount taken off the top each month, before the % split.';
-  $('prValue').placeholder = alloc==='percent' ? 'e.g. 50' : 'e.g. 300';
+  $('prTargetLbl').textContent = (kind==='debt' ? 'Loan balance to clear' : 'Target amount')+' (optional)';
 }
 function savePriority(){
   const name=$('prName').value.trim(); if(!name){toast('Name it');return;}
-  const kind=$('prKind').value, alloc=$('prAlloc').value, value=parseFloat($('prValue').value)||0;
-  if(value<=0){toast(alloc==='percent'?'Enter a weight':'Enter an amount');return;}
+  const kind=$('prKind').value;
   const target=kind==='recurring'?0:(parseFloat($('prTarget').value)||0);
   const start=kind==='recurring'?0:(parseFloat($('prStart').value)||0);
   if(editingPriority){
     const p=S.priorities.find(x=>x.id===editingPriority);
-    if(p)Object.assign(p,{name,emoji:$('prEmoji').value.trim()||p.emoji,kind,alloc,value,target});
+    if(p)Object.assign(p,{name,emoji:$('prEmoji').value.trim()||p.emoji,kind,target});
   }else{
-    const p={id:'p'+Date.now()+''+Math.floor(Math.random()*99),name,emoji:$('prEmoji').value.trim()||defEmoji(kind),kind,alloc,value,target,log:[]};
+    const p={id:'p'+Date.now()+''+Math.floor(Math.random()*99),name,emoji:$('prEmoji').value.trim()||defEmoji(kind),kind,target,log:[]};
     if(start>0)p.log.push({id:'s'+Date.now(),amount:start,date:todayStr(),note:'starting balance'});
     S.priorities.push(p);
   }
-  save();clearPrForm();renderPlan();toast('Priority saved');
+  save();clearPrForm();renderPlan();renderCatPick();toast('Priority saved');
 }
 function clearPrForm(){
-  ['prName','prEmoji','prValue','prTarget','prStart'].forEach(i=>$(i).value='');
-  $('prKind').value='debt'; $('prAlloc').value='percent';
+  ['prName','prEmoji','prTarget','prStart'].forEach(i=>$(i).value='');
+  $('prKind').value='debt';
   $('prSummary').textContent='+ Add a priority'; $('prSave').textContent='Add priority';
   $('prCancel').style.display='none'; $('prDetails').open=false; editingPriority=null; prAllocUI();
 }
 function editPriority(id){
   const p=S.priorities.find(x=>x.id===id); if(!p)return; editingPriority=id;
   $('prName').value=p.name; $('prEmoji').value=p.emoji||''; $('prKind').value=p.kind;
-  $('prAlloc').value=p.alloc; $('prValue').value=p.value; $('prTarget').value=p.target||''; $('prStart').value='';
+  $('prTarget').value=p.target||''; $('prStart').value='';
   $('prSummary').textContent='Editing: '+p.name; $('prSave').textContent='Save changes';
   $('prCancel').style.display='block'; $('prDetails').open=true; prAllocUI();
   $('prName').scrollIntoView({behavior:'smooth',block:'center'});
@@ -956,22 +983,20 @@ function logContribution(id){
 
 /* ---------- Plan: AI swaps ---------- */
 function planPayload(){
-  const inc=monthlyIncome(), sp=fixedFlexSplit(), pi=patternInsights(), a=allocate();
-  const recent=[...S.expenses].sort((x,y)=>y.date.localeCompare(x.date)).slice(0,25)
+  const pi=patternInsights();
+  const recent=[...S.expenses].filter(isSpend).sort((x,y)=>y.date.localeCompare(x.date)).slice(0,25)
     .map(e=>({date:e.date,category:catById(e.cat).name,amount:Math.round(e.amount*100)/100,note:e.note||''}));
-  const prios=S.priorities.map(p=>({name:p.name,type:p.kind,allocation:p.alloc==='fixed'?money(p.value)+'/mo':p.value+' weight',
-    target:p.target||0,saved:Math.round(prProgress(p)),plannedMonthly:Math.round((a.monthly[p.id]||0)*100)/100}));
-  return {currency:cur(),monthlyIncome:Math.round(inc),fixedBills:Math.round(sp.fixed),flexibleSpending:Math.round(sp.flex),
-    spareMoney:Math.round(inc-sp.total),thisWeek:Math.round(pi.thisWeek),lastWeek:Math.round(pi.lastWeek),
-    priorities:prios,recentExpenses:recent};
+  const prios=S.priorities.map(p=>({name:p.name,type:p.kind,target:p.target||0,saved:Math.round(prFunded(p))}));
+  return {currency:cur(),balance:Math.round(balance()),spentThisMonth:Math.round(thisMonthSpend()),
+    thisWeek:Math.round(pi.thisWeek),lastWeek:Math.round(pi.lastWeek),priorities:prios,recentExpenses:recent};
 }
 function offlinePlanAdvice(d){
   let out='💡 Ways to save & fund your priorities\n\n';
-  out+=`Spare money: ${money(d.spareMoney)}/mo (income ${money(d.monthlyIncome)} − spending ${money(d.fixedBills+d.flexibleSpending)}).\n\n`;
+  out+=`Balance: ${money(d.balance)} · spent this month: ${money(d.spentThisMonth)}.\n\n`;
   out+=savingTips().map(t=>'• '+t).join('\n');
   out+='\n\n🍽️ Budget meal rotation (batch-cook one base, swap the topping each week):\n';
   MEAL_ROTATION.forEach(m=>out+=`• ${m.name} — ~${money(m.cost)}/serving\n`);
-  if(d.priorities.length){out+='\nThis month your spare money funds:\n';d.priorities.forEach(p=>out+=`• ${p.name}: ${money(p.plannedMonthly)}/mo\n`);}
+  if(d.priorities.length){out+='\nYour priorities:\n';d.priorities.forEach(p=>out+=`• ${p.name}: ${money(p.saved)} saved${p.target?' of '+money(p.target):''}\n`);}
   out+='\nAdd an OpenAI key in the Budget tab for swaps tailored to exactly what you bought.';
   return out;
 }
@@ -995,11 +1020,10 @@ async function runPlanAI(){
 
 /* ---------- Settings: income, savings ---------- */
 function setFinance(){
-  S.incomeAmt=parseFloat($('setIncome').value)||0;
-  S.incomeFreq=$('setFreq').value||'biweekly';
-  S.savings=parseFloat($('setSavings').value)||0;
-  S.bufferMonths=Math.max(0,parseFloat($('setBuffer').value)||3);
-  save();updateIncomeHint();toast('Saved');
+  if($('setOpening'))S.openingBalance=parseFloat($('setOpening').value)||0;
+  save();refreshHeader();
+  if($('tab-plan').classList.contains('active'))renderMoneyPlan();
+  toast('Saved');
 }
 function updateIncomeHint(){
   if(!$('incomeHint'))return;
@@ -1038,7 +1062,7 @@ function delCategory(id){
   if(used&&!confirm('Some expenses use this category. They will be moved to "Other". Continue?'))return;
   if(used){let other=S.categories.find(c=>c.id==='other');if(!other){other={id:'other',name:'Other',color:'#64748b',emoji:'📦'};S.categories.push(other);}S.expenses.forEach(e=>{if(e.cat===id)e.cat='other';});}
   S.categories=S.categories.filter(c=>c.id!==id);
-  if(S.selectedCat===id)S.selectedCat=S.categories[0]?.id;
+  if(S.selTarget&&S.selTarget.k==='cat'&&S.selTarget.id===id)S.selTarget={k:'cat',id:S.categories[0]&&S.categories[0].id};
   delete S.budgets[id];save();renderCatMgr();renderCatPick();
 }
 
@@ -1179,12 +1203,9 @@ function initUI(){
   migrate();
   $('date').value=todayStr();
   $('curSym').value=cur();
-  $('setIncome').value=S.incomeAmt||'';
-  $('setFreq').value=S.incomeFreq||'biweekly';
-  $('setSavings').value=S.savings||'';
-  $('setBuffer').value=S.bufferMonths||3;
-  updateIncomeHint();
-  if(!S.categories.find(c=>c.id===S.selectedCat))S.selectedCat=S.categories[0]?.id;
+  if($('setOpening'))$('setOpening').value=S.openingBalance||'';
+  if(!S.selTarget||(S.selTarget.k==='cat'&&!catById(S.selTarget.id)))S.selTarget={k:'cat',id:S.categories[0]&&S.categories[0].id};
+  setEntryType('out');
   renderCatPick();renderRecent();refreshHeader();
   requestPersist();
 }
