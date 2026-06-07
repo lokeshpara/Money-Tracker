@@ -1,0 +1,12 @@
+# Local dev / preview config (not needed for the deployed app)
+.claude/
+
+# Backups exported from the app
+moneytrack-backup-*.json
+moneytrack-report-*.csv
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.log
+__check.js
