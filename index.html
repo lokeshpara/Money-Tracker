@@ -484,6 +484,8 @@ const isPrioTx=e=>!!e.prio;               // money put toward a priority (out, b
 const isSpend=e=>!isIncome(e)&&!isPrioTx(e); // a normal category expense
 function balance(){let b=(S.openingBalance||0);S.expenses.forEach(e=>{b+=isIncome(e)?e.amount:-e.amount;});return b;}
 function prFunded(p){let s=(p.log||[]).reduce((a,x)=>a+x.amount,0);S.expenses.forEach(e=>{if(e.prio===p.id)s+=e.amount;});return s;}
+function prPct(funded,target){if(!target)return '';const p=funded/target*100;if(p>0&&p<1)return '<1%';return Math.min(100,Math.round(p))+'%';}
+function prBarW(funded,target){if(!target)return 0;const p=Math.min(100,funded/target*100);return funded>0&&p<2?2:Math.round(p);} // show a sliver for tiny amounts
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),1800);}
 function fmtDate(ds){const[y,m,d]=ds.split('-');const dt=new Date(y,m-1,d);return dt.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});}
 
@@ -597,8 +599,10 @@ function renderHome(){
   const catBars=top.length?top.map(([id,v])=>{const c=catById(id),pct=spentMonth?Math.round(v/spentMonth*100):0;
     return `<div style="margin-bottom:9px"><div style="display:flex;justify-content:space-between;font-size:13px"><span>${c.emoji||''} ${c.name}</span><span>${money(v)} · ${pct}%</span></div><div class="bar"><div style="width:${pct}%;background:${c.color}"></div></div></div>`;}).join(''):'<div class="empty">No spending yet this month.</div>';
   // priorities mini
-  const prios=S.priorities.length?S.priorities.slice(0,4).map(p=>{const funded=prFunded(p),target=p.target||0,pct=target?Math.min(100,Math.round(funded/target*100)):0;
-    return `<div style="margin-bottom:9px"><div style="display:flex;justify-content:space-between;font-size:13px"><span>${p.emoji||'🎯'} ${escapeHtml(p.name)}</span><span>${target?pct+'%':money(funded)}</span></div>${target?`<div class="bar"><div style="width:${pct}%;background:#0f766e"></div></div>`:''}</div>`;}).join(''):'<div class="empty">No priorities yet.</div>';
+  const prios=S.priorities.length?S.priorities.slice(0,4).map(p=>{const funded=prFunded(p),target=p.target||0;
+    return `<div style="margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;font-size:13px"><span>${p.emoji||'🎯'} ${escapeHtml(p.name)}</span><span><b>${money(funded)}</b>${target?' / '+money(target):''}</span></div>
+      ${target?`<div class="bar"><div style="width:${prBarW(funded,target)}%;background:#0f766e"></div></div><div class="muted" style="font-size:11px;margin-top:2px">${prPct(funded,target)} funded</div>`:''}</div>`;}).join(''):'<div class="empty">No priorities yet.</div>';
   // recent
   const recent=[...S.expenses].sort((a,b)=>b.date.localeCompare(a.date)||b.id.localeCompare(a.id)).slice(0,5);
   const recentHtml=recent.length?recent.map(e=>expRow(e,true)).join(''):'<div class="empty">No transactions yet — add one above 👆</div>';
@@ -950,7 +954,7 @@ function renderPriorities(){
       bar=`<div class="bar"><div style="width:100%;background:#16a34a"></div></div>`;
       detail=`🎉 ${p.kind==='debt'?'Paid off':'Fully funded'}! (${money(funded)})`;
     }else if(target){
-      bar=`<div class="bar"><div style="width:${pct}%;background:#0f766e"></div></div>`;
+      bar=`<div class="bar"><div style="width:${prBarW(funded,target)}%;background:#0f766e"></div></div>`;
       detail=`${money(funded)} of ${money(target)} · ${money(remaining)} to go`;
     }else{
       detail=`${money(funded)} put in so far`;
@@ -967,7 +971,7 @@ function renderPriorities(){
         <span>/mo →</span> <span>${eta}</span></div>`;
     }
     return `<div class="goal">
-      <div class="top"><span>${p.emoji||'🎯'} ${escapeHtml(p.name)}</span><span>${target?pct+'%':''}</span></div>
+      <div class="top"><span>${p.emoji||'🎯'} ${escapeHtml(p.name)}</span><span>${target?prPct(funded,target):''}</span></div>
       ${bar}
       <div class="sub">${detail}</div>
       ${planRow}
