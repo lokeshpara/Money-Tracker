@@ -465,7 +465,9 @@ function migrate(){
   if(Array.isArray(S.expenses))S.expenses.forEach(e=>{if(!e.type)e.type='out';});
   if(!S.openingBalance&&S.savings)S.openingBalance=S.savings;
   if(!S.selTarget)S.selTarget={k:'cat',id:(S.categories[0]&&S.categories[0].id)||'food'};
-  save();
+  // IMPORTANT: persist WITHOUT bumping updatedAt or pushing — loading must never make
+  // stale local data look "newer" than the cloud (that caused stale-device overwrites).
+  try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}
 }
 
 /* ---------- Helpers ---------- */
@@ -1167,7 +1169,7 @@ async function updateStorageInfo(){
 }
 
 /* ---------- Cloud sync (Supabase) ---------- */
-let sb=null, sbUser=null, pushTimer=null, applyingRemote=false;
+let sb=null, sbUser=null, pushTimer=null, applyingRemote=false, syncReady=false;
 function cloudConfigured(){return !!(window.MT_SUPABASE_URL&&window.MT_SUPABASE_ANON_KEY&&window.supabase&&window.supabase.createClient);}
 function setSyncStatus(t){const el=$('syncStatus');if(el)el.textContent=t;}
 let rtChannel=null, pollTimer=null;
@@ -1213,7 +1215,7 @@ async function pullCloud(silent){
       if(rT>lT){
         // don't wipe what the user is actively typing — pick it up on the next tick
         const ae=document.activeElement;
-        if(ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA')){setSyncStatus('New changes available…');return;}
+        if(ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA')){setSyncStatus('New changes available…');syncReady=true;return;}
         const before=stateSig(S);
         applyingRemote=true;                 // suppress timestamp re-stamp + push during adopt (prevents loop)
         try{
@@ -1225,8 +1227,9 @@ async function pullCloud(silent){
     }else{await pushCloud();} // first time: seed the cloud with local data
     setSyncStatus('Up to date');
   }catch(e){setSyncStatus('Sync error — will retry');}
+  syncReady=true;   // only allow pushes AFTER the first pull has reconciled with the cloud
 }
-function schedulePush(){if(applyingRemote||!sb||!sbUser)return;clearTimeout(pushTimer);pushTimer=setTimeout(pushCloud,1500);}
+function schedulePush(){if(applyingRemote||!sb||!sbUser||!syncReady)return;clearTimeout(pushTimer);pushTimer=setTimeout(pushCloud,1500);}
 async function pushCloud(){
   if(!sb||!sbUser)return;
   setSyncStatus('Syncing…');
