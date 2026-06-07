@@ -115,6 +115,9 @@
   .goal .sub{font-size:12px;color:var(--muted);margin-top:5px}
   .goal-act{display:flex;gap:8px;margin-top:9px}
   .goal-act .btn{margin-top:0}
+  .planrow{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:13px;margin-top:8px;
+    background:#eef2ff;border-radius:8px;padding:8px 10px}
+  .planrow input{width:90px;padding:6px 8px;font-size:13px}
 
   /* ===================== Modern polish ===================== */
   .card{border:1px solid rgba(15,23,42,.05);box-shadow:0 1px 2px rgba(15,23,42,.04),0 4px 12px rgba(15,23,42,.03)}
@@ -895,10 +898,22 @@ function renderPriorities(){
     }else{
       detail=`${money(funded)} put in so far`;
     }
+    // pay-off planner: type how much you'll put in per month → months to finish + date
+    let planRow='';
+    if(p.kind!=='recurring'&&target&&remaining>0){
+      const plan=p.monthlyPlan||0;
+      const months=plan>0?Math.ceil(remaining/plan):0;
+      const eta=plan>0?`≈ <b>${months} month${months===1?'':'s'}</b> · done by <b>${addMonths(months)}</b>`
+                      :'<span class="muted">type an amount to see when it\'s done</span>';
+      planRow=`<div class="planrow"><span>If I pay ${cur()}</span>
+        <input type="number" inputmode="decimal" value="${plan||''}" placeholder="0" onchange="setPrPlan('${p.id}',this.value)">
+        <span>/mo →</span> <span>${eta}</span></div>`;
+    }
     return `<div class="goal">
       <div class="top"><span>${p.emoji||'🎯'} ${escapeHtml(p.name)}</span><span>${target?pct+'%':''}</span></div>
       ${bar}
       <div class="sub">${detail}</div>
+      ${planRow}
       <div class="goal-act">
         <button class="btn sm" style="width:auto" onclick="fundPriority('${p.id}')">+ Add money</button>
         <button class="btn sm sec" onclick="editPriority('${p.id}')">Edit</button>
@@ -906,6 +921,8 @@ function renderPriorities(){
       </div></div>`;
   }).join('');
 }
+function setPrPlan(id,val){const p=priById(id);if(!p)return;p.monthlyPlan=parseFloat(val)||0;save();renderPriorities();}
+function addMonths(n){const d=new Date();d.setMonth(d.getMonth()+n);return d.toLocaleDateString(undefined,{month:'short',year:'numeric'});}
 function fundPriority(id){setEntryType('out');S.selTarget={k:'prio',id};save();renderCatPick();go('add');var a=$('amount');if(a)a.focus();toast('Enter the amount to put toward it');}
 
 function renderPatterns(){
