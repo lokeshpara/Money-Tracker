@@ -1079,31 +1079,55 @@ async function updateStorageInfo(){
 let sb=null, sbUser=null, pushTimer=null, applyingRemote=false;
 function cloudConfigured(){return !!(window.MT_SUPABASE_URL&&window.MT_SUPABASE_ANON_KEY&&window.supabase&&window.supabase.createClient);}
 function setSyncStatus(t){const el=$('syncStatus');if(el)el.textContent=t;}
+let rtChannel=null, pollTimer=null;
 function cloudInit(){
   renderAccount();
   if(!cloudConfigured())return;
   try{sb=window.supabase.createClient(window.MT_SUPABASE_URL,window.MT_SUPABASE_ANON_KEY);}catch(e){sb=null;}
   if(!sb)return;
-  sb.auth.getSession().then(({data})=>{sbUser=data&&data.session?data.session.user:null;renderAccount();if(sbUser)pullCloud(true);});
-  sb.auth.onAuthStateChange((_e,session)=>{const was=sbUser;sbUser=session?session.user:null;renderAccount();if(sbUser&&(!was||was.id!==sbUser.id))pullCloud(true);});
-  window.addEventListener('focus',()=>{if(sbUser)pullCloud(false);});
-  window.addEventListener('online',()=>{if(sbUser)pullCloud(false);});
+  sb.auth.getSession().then(({data})=>onAuth(data&&data.session?data.session.user:null));
+  sb.auth.onAuthStateChange((_e,session)=>onAuth(session?session.user:null));
+  // auto-pull triggers (no manual button needed):
+  window.addEventListener('focus',()=>{if(sbUser)pullCloud(true);});
+  window.addEventListener('online',()=>{if(sbUser)pullCloud(true);});
+  document.addEventListener('visibilitychange',()=>{if(sbUser&&document.visibilityState==='visible')pullCloud(true);});
+  // background poll every 12s while signed in and the app is on-screen
+  clearInterval(pollTimer);
+  pollTimer=setInterval(()=>{if(sb&&sbUser&&document.visibilityState==='visible')pullCloud(true);},12000);
 }
-async function pullCloud(adopt){
+function onAuth(user){
+  const was=sbUser; sbUser=user; renderAccount();
+  if(sbUser){ if(!was||was.id!==sbUser.id){pullCloud(true);subscribeRealtime();} }
+  else unsubscribeRealtime();
+}
+function subscribeRealtime(){ // instant push from other devices (if Realtime enabled on the table)
   if(!sb||!sbUser)return;
-  setSyncStatus('Checking cloud…');
+  unsubscribeRealtime();
+  try{
+    rtChannel=sb.channel('mt_'+sbUser.id)
+      .on('postgres_changes',{event:'*',schema:'public',table:'app_state',filter:'user_id=eq.'+sbUser.id},()=>pullCloud(true))
+      .subscribe();
+  }catch(e){}
+}
+function unsubscribeRealtime(){try{if(rtChannel){sb.removeChannel(rtChannel);rtChannel=null;}}catch(e){}}
+async function pullCloud(silent){
+  if(!sb||!sbUser)return;
+  if(!silent)setSyncStatus('Checking cloud…');
   try{
     const {data,error}=await sb.from('app_state').select('data,updated_at').eq('user_id',sbUser.id).maybeSingle();
     if(error)throw error;
     if(data&&data.data){
       const remote=data.data, rT=remote.updatedAt||data.updated_at||'', lT=S.updatedAt||'';
       if(rT>lT){
+        // don't wipe what the user is actively typing — pick it up on the next tick
+        const ae=document.activeElement;
+        if(ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA')){setSyncStatus('New changes available…');return;}
         applyingRemote=true;
         S=Object.assign(JSON.parse(JSON.stringify(DEFAULT)),remote);
         localStorage.setItem(KEY,JSON.stringify(S));
         applyingRemote=false;
         initUI();go(currentTab);
-        toast('Synced from cloud');
+        toast('Synced from your other device');
       }else if(lT>rT){await pushCloud();}
     }else{await pushCloud();} // first time: seed the cloud with local data
     setSyncStatus('Up to date');

@@ -1,0 +1,6 @@
+# Tells Netlify to serve the site straight from the repo root (no build step).
+# This overrides the dashboard "Publish directory" setting, so the site can't
+# accidentally publish an empty folder.
+[build]
+  publish = "."
+  command = ""
