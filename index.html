@@ -729,16 +729,15 @@ function catKind(id){return catById(id).kind||'flex';}
 
 // average monthly spend per category from completed months; projects if only the current month exists
 function monthlyByCategory(){
-  // Average monthly spend per category across EVERY month that has data — current month
-  // included — so expenses you add now show up in the plan right away.
-  const byMC={}, months=new Set();
-  S.expenses.forEach(e=>{const m=monthOf(e.date);months.add(m);
-    (byMC[m]=byMC[m]||{})[e.cat]=(byMC[m][e.cat]||0)+e.amount;});
-  const n=months.size, res={};
-  if(!n)return res;
-  months.forEach(m=>{const c=byMC[m];for(const k in c)res[k]=(res[k]||0)+c[k];});
-  for(const k in res)res[k]/=n;
-  return res;
+  // Per-category spending for THIS month (so the plan matches your actual current-month totals).
+  // If this month has nothing logged yet, fall back to the most recent month that does.
+  const byMC={};
+  S.expenses.forEach(e=>{const m=monthOf(e.date);(byMC[m]=byMC[m]||{})[e.cat]=(byMC[m][e.cat]||0)+e.amount;});
+  const months=Object.keys(byMC);
+  if(!months.length)return {};
+  const cm=monthOf(todayStr());
+  const use=byMC[cm]?cm:months.sort().reverse()[0];
+  return Object.assign({},byMC[use]);
 }
 function fixedFlexSplit(){
   const m=monthlyByCategory(); let fixed=0, flex=0;
@@ -829,7 +828,7 @@ function renderMoneyPlan(){
   $('planHead').innerHTML=`
     <div class="stat-grid">
       <div class="stat"><div class="l">Income / month</div><div class="v">${money(inc)}</div></div>
-      <div class="stat"><div class="l">Typical spending</div><div class="v">${money(sp.total)}</div></div>
+      <div class="stat"><div class="l">Spending this month</div><div class="v">${money(sp.total)}</div></div>
       <div class="stat"><div class="l">Spare money</div><div class="v" style="color:${free>=0?'#16a34a':'#dc2626'}">${money(free)}</div></div>
       <div class="stat"><div class="l">Going to priorities</div><div class="v">${money(allocated)}</div></div>
     </div>
@@ -839,7 +838,7 @@ function renderMoneyPlan(){
       <div class="tot"><span>Spare after spending</span><b>${money(free)}</b></div>
     </div>
     ${cushion>0?`<div class="hl ok">💰 You also have <b>${money(cushion)}</b> in savings above your ${buffer}-month emergency fund — available for a one-time push on a priority.</div>`:''}
-    <div class="muted" style="margin-top:8px">Based on ${money(S.incomeAmt)} ${({weekly:'every week',biweekly:'every 2 weeks',semimonthly:'twice a month',monthly:'per month'})[S.incomeFreq]} (≈ ${money(inc)}/mo). "Typical spending" uses your logged history.</div>`;
+    <div class="muted" style="margin-top:8px">Based on ${money(S.incomeAmt)} ${({weekly:'every week',biweekly:'every 2 weeks',semimonthly:'twice a month',monthly:'per month'})[S.incomeFreq]} (≈ ${money(inc)}/mo). Spending shown is your actual total for this month.</div>`;
 }
 
 function renderPriorities(){
