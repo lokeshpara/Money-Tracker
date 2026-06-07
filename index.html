@@ -1091,9 +1091,9 @@ function cloudInit(){
   window.addEventListener('focus',()=>{if(sbUser)pullCloud(true);});
   window.addEventListener('online',()=>{if(sbUser)pullCloud(true);});
   document.addEventListener('visibilitychange',()=>{if(sbUser&&document.visibilityState==='visible')pullCloud(true);});
-  // background poll every 12s while signed in and the app is on-screen
+  // background poll every 8s while signed in (browsers auto-throttle hidden tabs)
   clearInterval(pollTimer);
-  pollTimer=setInterval(()=>{if(sb&&sbUser&&document.visibilityState==='visible')pullCloud(true);},12000);
+  pollTimer=setInterval(()=>{if(sb&&sbUser)pullCloud(true);},8000);
 }
 function onAuth(user){
   const was=sbUser; sbUser=user; renderAccount();
